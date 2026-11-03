@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0B6B57" />
+    <title>Hatiri — offline</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+      }
+      body {
+        font-family:
+          "Plus Jakarta Sans",
+          system-ui,
+          -apple-system,
+          sans-serif;
+        background: #f5f4ef;
+        color: #14201c;
+        display: grid;
+        place-content: center;
+        min-height: 100vh;
+        margin: 0;
+        padding: 24px;
+        text-align: center;
+      }
+      @media (prefers-color-scheme: dark) {
+        body {
+          background: #0e1512;
+          color: #eaf1ee;
+        }
+        p {
+          color: #a7b8b0;
+        }
+      }
+      .badge {
+        display: inline-grid;
+        place-items: center;
+        width: 56px;
+        height: 56px;
+        margin: 0 auto 18px;
+        border-radius: 16px;
+        background: #0b6b57;
+        color: white;
+        font-weight: 800;
+        font-size: 20px;
+        letter-spacing: -1px;
+      }
+      strong {
+        font-size: 28px;
+        letter-spacing: -0.8px;
+      }
+      p {
+        color: #4b5b55;
+        max-width: 340px;
+        line-height: 1.5;
+      }
+      button {
+        margin-top: 20px;
+        padding: 12px 22px;
+        border: 0;
+        border-radius: 10px;
+        background: #0b6b57;
+        color: white;
+        font-weight: 700;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="badge">h</div>
+      <strong>You're offline</strong>
+      <p>
+        Hatiri works fully offline once it has opened once. Reconnect, or reopen
+        the app from your home screen.
+      </p>
+      <button onclick="location.reload()">Try again</button>
+    </main>
+  </body>
+</html>

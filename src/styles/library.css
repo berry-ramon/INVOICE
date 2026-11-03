@@ -1,0 +1,314 @@
+.library-table {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+}
+.library-head,
+.library-row {
+  display: grid;
+  grid-template-columns: 48px minmax(220px, 1.7fr) 1fr 0.7fr 0.5fr 0.8fr;
+  align-items: center;
+  gap: 14px;
+  padding: 0 18px;
+}
+.library-head {
+  grid-template-columns: minmax(282px, 1.7fr) 1fr 0.7fr 0.5fr 0.8fr;
+  height: 44px;
+  padding-left: 80px;
+  background: var(--background);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.library-row {
+  width: 100%;
+  min-height: 72px;
+  border: 0;
+  border-top: 1px solid var(--border);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.library-row:hover {
+  background: var(--primary-soft);
+}
+.library-row > span:nth-child(2) {
+  display: grid;
+  gap: 4px;
+}
+.library-row small {
+  color: var(--muted);
+}
+.item-symbol {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: var(--primary-soft);
+  color: var(--primary);
+  display: grid;
+  place-items: center;
+}
+.item-symbol svg {
+  width: 18px;
+}
+.library-row > strong:last-child {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.template-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(220px, 1fr));
+  gap: 16px;
+}
+.template-grid > article {
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+.template-preview {
+  height: 235px;
+  padding: 26px 24px;
+  background: #fff;
+  border: 1px solid #dce4e0;
+  border-radius: 8px;
+  box-shadow: inset 0 0 0 1px #fff;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  overflow: hidden;
+}
+.template-preview > div {
+  width: 42%;
+  height: 11px;
+  border-radius: 2px;
+}
+.template-preview > i {
+  display: block;
+  height: 3px;
+  width: 66%;
+  background: #dce4e0;
+}
+.template-preview > i:nth-of-type(2) {
+  width: 45%;
+}
+.template-preview > i:nth-of-type(3) {
+  width: 32%;
+  margin-bottom: 12px;
+}
+.template-preview > section {
+  height: 62px;
+  border-top: 11px solid #0b6b57;
+  display: grid;
+  gap: 7px;
+  padding-top: 8px;
+}
+.template-preview > section span {
+  height: 3px;
+  background: #e4e9e6;
+}
+.template-preview > b {
+  width: 38%;
+  height: 24px;
+  margin: 20px 0 0 auto;
+  border-top: 3px solid #dce4e0;
+  border-bottom: 3px solid #dce4e0;
+}
+.template-preview.coast {
+  background: #fffdf7;
+}
+.template-preview.slate > section {
+  border-top-width: 3px;
+}
+.template-preview.nuru > div {
+  width: 100%;
+  height: 32px;
+}
+.template-preview.minimal > section {
+  border-top-color: #2b2b2b;
+  border-top-width: 2px;
+}
+.template-preview.thermal {
+  width: 58%;
+  margin: auto;
+  padding-inline: 12px;
+}
+.template-meta {
+  padding: 13px 2px 10px;
+  display: flex;
+  align-items: center;
+}
+.template-meta > span {
+  display: grid;
+  gap: 3px;
+  flex: 1;
+}
+.template-meta small {
+  color: var(--muted);
+}
+.template-grid > article > .btn {
+  width: 100%;
+}
+.brand-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.75fr) minmax(440px, 1.4fr);
+  gap: 16px;
+}
+.brand-profile,
+.asset-panel {
+  padding: 22px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+.brand-profile-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+}
+.brand-profile-head > div:nth-child(2) {
+  display: grid;
+  gap: 3px;
+}
+.brand-profile-head > div:nth-child(2) span {
+  color: var(--muted);
+}
+.current-badge {
+  margin-left: auto;
+  padding: 5px 8px;
+  border-radius: 99px;
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-size: 10px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.current-badge svg {
+  width: 12px;
+}
+.brand-profile dl {
+  display: grid;
+  grid-template-columns: 1fr 1.3fr;
+  gap: 14px;
+  margin: 22px 0;
+}
+.brand-profile dt {
+  color: var(--muted);
+}
+.brand-profile dd {
+  margin: 0;
+  font-weight: 600;
+}
+.brand-accent {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-right: 6px;
+  border-radius: 4px;
+  background: var(--primary);
+  vertical-align: -1px;
+}
+.asset-panel h2,
+.asset-panel p {
+  margin: 0;
+}
+.asset-panel p {
+  color: var(--muted);
+  margin-top: 5px;
+}
+.asset-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 20px;
+}
+.asset-grid button {
+  min-height: 128px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--background);
+  text-align: left;
+  display: grid;
+  align-content: center;
+  justify-items: start;
+  gap: 5px;
+  cursor: pointer;
+}
+.asset-grid button:hover {
+  border-color: var(--primary);
+}
+.asset-grid button > span:first-child {
+  min-width: 42px;
+  height: 42px;
+  padding: 0 8px;
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--primary);
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+}
+.asset-grid button > small {
+  color: var(--muted);
+}
+.asset-grid .signature {
+  font-family: Caveat, cursive;
+  font-size: 19px;
+}
+.asset-grid .add-asset {
+  border-style: dashed;
+}
+.install-button {
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .template-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .brand-layout {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 639px) {
+  .library-head {
+    display: none;
+  }
+  .library-row {
+    grid-template-columns: 40px 1fr auto;
+    gap: 10px;
+    padding: 12px;
+  }
+  .library-row > span:nth-child(n + 3) {
+    display: none;
+  }
+  .library-row > strong:last-child {
+    grid-column: 3;
+    grid-row: 1;
+  }
+  .template-grid {
+    grid-template-columns: 1fr;
+  }
+  .template-preview {
+    height: 260px;
+  }
+  .brand-layout {
+    display: block;
+  }
+  .asset-panel {
+    margin-top: 12px;
+  }
+  .asset-grid {
+    grid-template-columns: 1fr;
+  }
+  .install-button {
+    display: none;
+  }
+}

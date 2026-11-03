@@ -1,0 +1,62 @@
+@import 'tailwindcss';
+@import '@fontsource/plus-jakarta-sans/400.css';
+@import '@fontsource/plus-jakarta-sans/500.css';
+@import '@fontsource/plus-jakarta-sans/600.css';
+@import '@fontsource/plus-jakarta-sans/700.css';
+@import '@fontsource/plus-jakarta-sans/800.css';
+@import '@fontsource/caveat/500.css';
+@import './styles/app.css';
+@import './styles/editor.css';
+@import './styles/library.css';
+
+:root {
+  --background: #f5f4ef;
+  --surface: #ffffff;
+  --surface-raised: #ffffff;
+  --border: #dce4e0;
+  --text: #14201c;
+  --text-secondary: #4b5b55;
+  --muted: #7a8982;
+  --primary: #0b6b57;
+  --primary-hover: #095545;
+  --primary-soft: #e3f3ee;
+  --on-primary: #ffffff;
+  --accent: #e8a317;
+  --accent-soft: #fbefd0;
+  --danger: #c2362b;
+  --workspace: #e9e7df;
+  --shadow: 0 8px 30px rgb(18 34 28 / 8%);
+}
+
+.dark {
+  --background: #0e1512;
+  --surface: #151f1b;
+  --surface-raised: #1c2823;
+  --border: #2a3a33;
+  --text: #eaf1ee;
+  --text-secondary: #a7b8b0;
+  --muted: #7f9188;
+  --primary: #3fc3a0;
+  --primary-hover: #65d2b5;
+  --primary-soft: #153d32;
+  --on-primary: #072019;
+  --accent: #f2b63a;
+  --accent-soft: #3f3318;
+  --danger: #ef766d;
+  --workspace: #0a100d;
+  --shadow: 0 8px 30px rgb(0 0 0 / 25%);
+}
+
+@layer base {
+  * { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+  html, body, #root { min-height: 100%; }
+  body { margin: 0; overflow-x: hidden; background: var(--background); color: var(--text); font-family: 'Plus Jakarta Sans', sans-serif; font-size: 14px; }
+  button, input { font: inherit; }
+  button, a { -webkit-tap-highlight-color: transparent; }
+  button { color: inherit; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  button, a, .sidebar, .main-content, .document-row, .stage { transition: 180ms ease-out; }
+}

@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="color-scheme" content="light dark" />
+    <meta
+      name="theme-color"
+      media="(prefers-color-scheme: light)"
+      content="#F5F4EF"
+    />
+    <meta
+      name="theme-color"
+      media="(prefers-color-scheme: dark)"
+      content="#0E1512"
+    />
+
+    <title>Hatiri — offline invoicing, receipts &amp; quotations</title>
+    <meta
+      name="description"
+      content="Hatiri is a fully offline app for invoices, receipts, quotations and vouchers. Create, brand, sign and export professional PDFs on your own device. No accounts, no server, no watermarks."
+    />
+    <meta name="robots" content="index,follow" />
+    <meta name="author" content="Hatiri" />
+    <meta name="application-name" content="Hatiri" />
+
+    <link rel="canonical" href="https://hatiri.app/" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Hatiri" />
+    <meta
+      property="og:title"
+      content="Hatiri — offline invoicing, on your device"
+    />
+    <meta
+      property="og:description"
+      content="Invoices, receipts, quotations and vouchers — created, branded and exported to PDF entirely offline. No accounts. No watermarks."
+    />
+    <meta property="og:url" content="https://hatiri.app/" />
+    <meta property="og:image" content="https://hatiri.app/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Hatiri app preview" />
+    <meta property="og:locale" content="en_US" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta
+      name="twitter:title"
+      content="Hatiri — offline invoicing, on your device"
+    />
+    <meta
+      name="twitter:description"
+      content="Offline-first invoicing app. Invoices, receipts, quotations and vouchers, exported to professional PDFs."
+    />
+    <meta name="twitter:image" content="https://hatiri.app/og-image.png" />
+
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="mask-icon" href="/icon.svg" color="#0B6B57" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Hatiri",
+        "applicationCategory": "BusinessApplication",
+        "operatingSystem": "Any",
+        "url": "https://hatiri.app/",
+        "description": "Offline-first invoicing, receipts, quotations and vouchers. Create, brand, sign and export professional PDFs with no server and no watermarks.",
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD"
+        },
+        "featureList": [
+          "Fully offline PWA",
+          "Invoice, receipt, quotation and voucher documents",
+          "Custom logo, signature and stamp",
+          "Landscape and portrait PDF export",
+          "Template layouts with per-document accent colour",
+          "No watermarks",
+          "No accounts, no server"
+        ]
+      }
+    </script>
+
+    <script>
+      (() => {
+        try {
+          const value =
+            JSON.parse(localStorage.getItem("hatiri-theme") || "null") ||
+            "system";
+          const dark =
+            value === "dark" ||
+            (value === "system" &&
+              matchMedia("(prefers-color-scheme: dark)").matches);
+          document.documentElement.classList.toggle("dark", dark);
+        } catch {}
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <noscript>
+      <h1>Hatiri</h1>
+      <p>
+        Hatiri is an offline invoicing app and needs JavaScript enabled to run
+        locally on your device.
+      </p>
+    </noscript>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

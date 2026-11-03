@@ -7,11 +7,17 @@ import type {
 import { formatDate, grandTotal, money } from "@/lib/data";
 import { uuid } from "@/lib/uuid";
 
-/* ─── Percent formatter (drops trailing .0) ───────────── */
 function formatPct(n: number): string {
   if (!Number.isFinite(n)) return "0";
   const rounded = Math.round(n * 10) / 10;
   return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+}
+
+export function normalizeLabel(label: string): string {
+  return label.replace(/(\d+\.\d{2,})%/, (_, n) => {
+    const rounded = Math.round(parseFloat(n) * 10) / 10;
+    return `${Number.isInteger(rounded) ? rounded : rounded.toFixed(1)}%`;
+  });
 }
 
 export function addInterval(
@@ -26,7 +32,6 @@ export function addInterval(
   return d.toISOString().slice(0, 10);
 }
 
-/* ─── Build schedule from either a percent or a fixed deposit ─ */
 export function buildSchedule(opts: {
   total: number;
   mode: "deposit-installments" | "deposit-only";
@@ -58,12 +63,14 @@ export function buildSchedule(opts: {
         id: uuid(),
         label: depositLabel,
         amount: depositValue,
+        originalAmount: depositValue,
         dueDate: opts.startDate,
       },
       {
         id: uuid(),
         label: "Balance",
         amount: Math.max(0, total - depositValue),
+        originalAmount: Math.max(0, total - depositValue),
         dueDate: opts.balanceDate ?? opts.startDate,
       },
     ];
@@ -77,6 +84,7 @@ export function buildSchedule(opts: {
       id: uuid(),
       label: depositLabel,
       amount: depositValue,
+      originalAmount: depositValue,
       dueDate: opts.startDate,
     },
   ];
@@ -91,13 +99,120 @@ export function buildSchedule(opts: {
       id: uuid(),
       label: `Payment ${i + 1} of ${opts.installmentCount}`,
       amount,
+      originalAmount: amount,
       dueDate: addInterval(opts.startDate, opts.interval, i + 1),
     });
   }
   return rows;
 }
 
-/* ─── Row state helpers ───────────────────────────────── */
+export function buildScheduleByAmount(opts: {
+  total: number;
+  depositMode: DepositMode;
+  depositPercent: number;
+  depositAmount: number;
+  perPeriodAmount: number;
+  interval: InstallmentInterval;
+  startDate: string;
+}): ScheduledPayment[] {
+  const total = Math.max(0, opts.total);
+  const per = Math.max(0, opts.perPeriodAmount);
+
+  let depositValue: number;
+  let depositLabel: string;
+  if (opts.depositMode === "fixed") {
+    depositValue =
+      Math.round(Math.min(Math.max(0, opts.depositAmount), total) * 100) / 100;
+    depositLabel = "Deposit";
+  } else {
+    const pct = Math.round(opts.depositPercent * 100) / 100;
+    depositValue = Math.round(((total * pct) / 100) * 100) / 100;
+    depositLabel = `Deposit (${formatPct(pct)}%)`;
+  }
+
+  const remaining = Math.max(0, total - depositValue);
+  const rows: ScheduledPayment[] = [
+    {
+      id: uuid(),
+      label: depositLabel,
+      amount: depositValue,
+      originalAmount: depositValue,
+      dueDate: opts.startDate,
+    },
+  ];
+
+  if (remaining <= 0 || per <= 0) return rows;
+
+  const count = Math.ceil(remaining / per);
+  for (let i = 0; i < count; i++) {
+    const isLast = i === count - 1;
+    const amount = isLast
+      ? Math.round((remaining - per * (count - 1)) * 100) / 100
+      : per;
+    rows.push({
+      id: uuid(),
+      label: `Payment ${i + 1} of ${count}`,
+      amount,
+      originalAmount: amount,
+      dueDate: addInterval(opts.startDate, opts.interval, i + 1),
+    });
+  }
+  return rows;
+}
+
+export function rebalanceLastRow(
+  rows: ScheduledPayment[],
+  grandTotalValue: number,
+): ScheduledPayment[] {
+  if (rows.length < 2) return rows;
+  const deposit = rows[0]?.amount ?? 0;
+  const installmentsExceptLast = rows
+    .slice(1, -1)
+    .reduce((s, r) => s + r.amount, 0);
+  const lastAmount = Math.max(
+    0,
+    Math.round((grandTotalValue - deposit - installmentsExceptLast) * 100) /
+      100,
+  );
+  return [
+    ...rows.slice(0, -1),
+    { ...rows[rows.length - 1], amount: lastAmount },
+  ];
+}
+
+export function settleAndRoll(
+  rows: ScheduledPayment[],
+  rowId: string,
+  grandTotalValue: number,
+): ScheduledPayment[] {
+  const idx = rows.findIndex((r) => r.id === rowId);
+  if (idx < 0 || idx === rows.length - 1) return rows;
+  const row = rows[idx];
+  const paid = row.paidAmount ?? 0;
+  const shortfall = Math.max(0, row.amount - paid);
+  if (shortfall <= 0.005) return rows;
+
+  const shifted: ScheduledPayment[] = rows.map((r, i) => {
+    if (i === idx) {
+      return {
+        ...r,
+        amount: Math.round(paid * 100) / 100,
+        paidAmount: Math.round(paid * 100) / 100,
+        paidAt: r.paidAt ?? new Date().toISOString(),
+      };
+    }
+    if (i === idx + 1) {
+      return {
+        ...r,
+        amount: Math.round((r.amount + shortfall) * 100) / 100,
+      };
+    }
+    return r;
+  });
+
+  return rebalanceLastRow(shifted, grandTotalValue);
+}
+
 export function outstandingOn(p: ScheduledPayment): number {
   return Math.max(0, p.amount - (p.paidAmount ?? 0));
 }
@@ -120,7 +235,6 @@ export function installmentOverdue(
   return new Date(p.dueDate).getTime() < today.getTime();
 }
 
-/* ─── Totals ─────────────────────────────────────────── */
 export function scheduleTotals(doc: MoneyDocument) {
   const schedule = doc.paymentSchedule ?? [];
   const total = grandTotal(doc);
@@ -158,7 +272,6 @@ export function scheduleTotals(doc: MoneyDocument) {
   return { total, paid, balance, overdue, upcoming, nextUpcoming };
 }
 
-/* ─── Receipt from an installment (partial-aware) ────── */
 export function buildReceiptFromInstallment(
   source: MoneyDocument,
   installment: ScheduledPayment,
@@ -206,7 +319,6 @@ export function buildReceiptFromInstallment(
   };
 }
 
-/* ─── Payment request (partial-aware) ────────────────── */
 export function buildPaymentRequestFromInstallment(
   source: MoneyDocument,
   installment: ScheduledPayment,
@@ -254,7 +366,6 @@ export function buildPaymentRequestFromInstallment(
   };
 }
 
-/* ─── Apply payment (accumulates; clamps to row amount) ─ */
 export function applyInstallmentPayment(
   source: MoneyDocument,
   installmentId: string,

@@ -11,6 +11,7 @@ export type ScheduleMode =
   | "full"
   | "deposit-installments"
   | "deposit-only"
+  | "deposit-per-period"
   | "custom";
 export type InstallmentInterval = "weekly" | "biweekly" | "monthly";
 export type DepositMode = "percent" | "fixed";
@@ -27,6 +28,7 @@ export interface ScheduledPayment {
   id: string;
   label: string;
   amount: number;
+  originalAmount?: number;
   dueDate: string;
   paidAt?: string;
   paidAmount?: number;
@@ -70,6 +72,7 @@ export interface MoneyDocument {
   depositPercent?: number;
   depositAmount?: number;
   installmentCount?: number;
+  perPeriodAmount?: number;
   installmentInterval?: InstallmentInterval;
 
   linkedInvoiceId?: string;

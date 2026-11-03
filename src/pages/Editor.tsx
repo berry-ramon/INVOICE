@@ -39,11 +39,15 @@ import {
   buildPaymentRequestFromInstallment,
   buildReceiptFromInstallment,
   buildSchedule,
+  buildScheduleByAmount,
   installmentOverdue,
   installmentPaid,
   installmentPartial,
+  normalizeLabel,
   outstandingOn,
+  rebalanceLastRow,
   scheduleTotals,
+  settleAndRoll,
 } from "@/lib/schedule";
 import { uuid } from "@/lib/uuid";
 import { useAppStore } from "@/store/app";
@@ -150,6 +154,12 @@ function EditorInner({ initial }: { initial: MoneyDocument }) {
     draft.depositAmount ?? 0,
   );
   const [formCount, setFormCount] = useState(draft.installmentCount ?? 3);
+  const [formPerPeriod, setFormPerPeriod] = useState(
+    draft.perPeriodAmount ?? 0,
+  );
+  const [formScheduleKind, setFormScheduleKind] = useState<
+    "count" | "per-period"
+  >(draft.scheduleMode === "deposit-per-period" ? "per-period" : "count");
   const [formInterval, setFormInterval] = useState<InstallmentInterval>(
     draft.installmentInterval ?? "monthly",
   );
@@ -160,7 +170,6 @@ function EditorInner({ initial }: { initial: MoneyDocument }) {
     draft.dueDate || new Date().toISOString().slice(0, 10),
   );
 
-  /* Record payment inline flow (one row at a time) */
   const [recordingFor, setRecordingFor] = useState<string | null>(null);
   const [recordAmount, setRecordAmount] = useState("");
 
@@ -176,7 +185,6 @@ function EditorInner({ initial }: { initial: MoneyDocument }) {
   const canHaveSchedule =
     draft.type === "Invoice" || draft.type === "Quotation";
 
-  /* Sync from store on mount if store is newer */
   useEffect(() => {
     const fresh = useAppStore
       .getState()
@@ -205,11 +213,18 @@ function EditorInner({ initial }: { initial: MoneyDocument }) {
 
   const updateRow = (id: string, next: Partial<ScheduledPayment>) => {
     if (!draft.paymentSchedule) return;
-    patch({
-      paymentSchedule: draft.paymentSchedule.map((p) =>
-        p.id === id ? { ...p, ...next } : p,
-      ),
-    });
+    const updated = draft.paymentSchedule.map((p) =>
+      p.id === id ? { ...p, ...next } : p,
+    );
+
+    const involvesAmount = "amount" in next;
+    const isLastRow = updated[updated.length - 1]?.id === id;
+    const final =
+      involvesAmount && !isLastRow && updated.length >= 2
+        ? rebalanceLastRow(updated, grandTotal(draft))
+        : updated;
+
+    patch({ paymentSchedule: final });
   };
 
   const undo = () => {
@@ -337,17 +352,46 @@ function EditorInner({ initial }: { initial: MoneyDocument }) {
   const removeLineItem = (itemId: string) =>
     patch({ items: draft.items.filter((i) => i.id !== itemId) });
 
-  /* ─── Schedule generation ────────────────────────────── */
   const generateSchedule = () => {
     const totalAmount = grandTotal(draft);
     if (totalAmount <= 0) {
-      setToast("Add items first - the schedule needs a total.");
+      setToast("Add items first — the schedule needs a total.");
       return;
     }
     if (formMode === "full") {
       patch({ paymentSchedule: undefined, scheduleMode: "full" });
       return;
     }
+
+    if (formScheduleKind === "per-period") {
+      if (formPerPeriod <= 0) {
+        setToast("Set an amount per period (e.g. 2000).");
+        return;
+      }
+      const sched = buildScheduleByAmount({
+        total: totalAmount,
+        depositMode: formDepositMode,
+        depositPercent: formDeposit,
+        depositAmount: formDepositAmount,
+        perPeriodAmount: formPerPeriod,
+        interval: formInterval,
+        startDate: formStart,
+      });
+      patch({
+        paymentSchedule: sched,
+        scheduleMode: "deposit-per-period",
+        depositMode: formDepositMode,
+        depositPercent: formDepositMode === "percent" ? formDeposit : undefined,
+        depositAmount:
+          formDepositMode === "fixed" ? formDepositAmount : undefined,
+        perPeriodAmount: formPerPeriod,
+        installmentInterval: formInterval,
+        installmentCount: sched.length - 1,
+      });
+      setToast("Per-period schedule created.");
+      return;
+    }
+
     const sched = buildSchedule({
       total: totalAmount,
       mode:
@@ -381,6 +425,7 @@ function EditorInner({ initial }: { initial: MoneyDocument }) {
       depositPercent: undefined,
       depositAmount: undefined,
       installmentCount: undefined,
+      perPeriodAmount: undefined,
       installmentInterval: undefined,
     });
   };
@@ -414,12 +459,12 @@ function EditorInner({ initial }: { initial: MoneyDocument }) {
       confirmLabel: "Remove",
     });
     if (!ok) return;
+    const filtered = (draft.paymentSchedule ?? []).filter((p) => p.id !== id);
     patch({
-      paymentSchedule: (draft.paymentSchedule ?? []).filter((p) => p.id !== id),
+      paymentSchedule: rebalanceLastRow(filtered, grandTotal(draft)),
     });
   };
 
-  /* ─── Record a payment (partial or full) ─────────────── */
   const startRecording = (row: ScheduledPayment) => {
     setRecordingFor(row.id);
     setRecordAmount(String(outstandingOn(row)));
@@ -561,7 +606,17 @@ function EditorInner({ initial }: { initial: MoneyDocument }) {
     }
   };
 
-  /* ─── Block ops ──────────────────────────────────────── */
+  const handleSettleAndRoll = (rowId: string) => {
+    const next = settleAndRoll(
+      draft.paymentSchedule ?? [],
+      rowId,
+      grandTotal(draft),
+    );
+    patch({ paymentSchedule: next });
+    void saveNow({ ...draft, paymentSchedule: next });
+    setToast("Shortfall rolled to the next period.");
+  };
+
   const hidden = draft.hiddenBlocks ?? [];
   const toggleBlock = (blockId: string) => {
     if (hidden.includes(blockId))
@@ -721,11 +776,11 @@ function EditorInner({ initial }: { initial: MoneyDocument }) {
         </div>
         <div className="shortcuts-hint">
           <strong>Shortcuts</strong>
-          <span>⌘Z / ⌘⇧Z - undo / redo</span>
-          <span>⌘S - save now</span>
-          <span>Esc - deselect / cancel edit</span>
-          <span>Delete - reset selected block positions</span>
-          <span>Double-click any text - edit in place</span>
+          <span>⌘Z / ⌘⇧Z — undo / redo</span>
+          <span>⌘S — save now</span>
+          <span>Esc — deselect / cancel edit</span>
+          <span>Delete — reset selected block positions</span>
+          <span>Double-click any text — edit in place</span>
         </div>
       </aside>
 
@@ -906,11 +961,42 @@ function EditorInner({ initial }: { initial: MoneyDocument }) {
               <Button variant="secondary" onClick={addLineItem}>
                 <Plus /> Add item
               </Button>
+              {libraryItems.length > 0 && (
+                <select
+                  onChange={(e) => {
+                    const found = libraryItems.find(
+                      (i) => i.id === e.target.value,
+                    );
+                    if (found) {
+                      patch({
+                        items: [
+                          ...draft.items,
+                          {
+                            id: uuid(),
+                            description: found.name,
+                            quantity: 1,
+                            rate: found.rate,
+                          },
+                        ],
+                      });
+                      e.target.value = "";
+                    }
+                  }}
+                  defaultValue=""
+                  className="rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                >
+                  <option value="">Add from library…</option>
+                  {libraryItems.map((i) => (
+                    <option key={i.id} value={i.id}>
+                      {i.name} — {money(i.rate, draft.currency)}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
           </div>
         )}
 
-        {/* ─── SCHEDULE PANEL ─────────────────────────────── */}
         {selected === "schedule" && (
           <div className="properties">
             {!canHaveSchedule ? (
@@ -943,6 +1029,30 @@ function EditorInner({ initial }: { initial: MoneyDocument }) {
                 {(formMode === "deposit-installments" ||
                   formMode === "deposit-only") && (
                   <>
+                    <label>
+                      Plan type
+                      <div className="segmented">
+                        <button
+                          type="button"
+                          className={
+                            formScheduleKind === "count" ? "active" : ""
+                          }
+                          onClick={() => setFormScheduleKind("count")}
+                        >
+                          Fixed count
+                        </button>
+                        <button
+                          type="button"
+                          className={
+                            formScheduleKind === "per-period" ? "active" : ""
+                          }
+                          onClick={() => setFormScheduleKind("per-period")}
+                        >
+                          Per-period amount
+                        </button>
+                      </div>
+                    </label>
+
                     <label>
                       Deposit as
                       <div className="segmented">
@@ -999,33 +1109,70 @@ function EditorInner({ initial }: { initial: MoneyDocument }) {
                   </>
                 )}
 
-                {formMode === "deposit-installments" && (
-                  <>
-                    <label>
-                      Number of installments
-                      <input
-                        type="number"
-                        min="1"
-                        max="24"
-                        value={formCount}
-                        onChange={(e) => setFormCount(Number(e.target.value))}
-                      />
-                    </label>
-                    <label>
-                      Frequency
-                      <select
-                        value={formInterval}
-                        onChange={(e) =>
-                          setFormInterval(e.target.value as InstallmentInterval)
-                        }
-                      >
-                        <option value="monthly">Monthly</option>
-                        <option value="biweekly">Every 2 weeks</option>
-                        <option value="weekly">Weekly</option>
-                      </select>
-                    </label>
-                  </>
-                )}
+                {formMode === "deposit-installments" &&
+                  formScheduleKind === "count" && (
+                    <>
+                      <label>
+                        Number of installments
+                        <input
+                          type="number"
+                          min="1"
+                          max="24"
+                          value={formCount}
+                          onChange={(e) => setFormCount(Number(e.target.value))}
+                        />
+                      </label>
+                      <label>
+                        Frequency
+                        <select
+                          value={formInterval}
+                          onChange={(e) =>
+                            setFormInterval(
+                              e.target.value as InstallmentInterval,
+                            )
+                          }
+                        >
+                          <option value="monthly">Monthly</option>
+                          <option value="biweekly">Every 2 weeks</option>
+                          <option value="weekly">Weekly</option>
+                        </select>
+                      </label>
+                    </>
+                  )}
+
+                {formMode === "deposit-installments" &&
+                  formScheduleKind === "per-period" && (
+                    <>
+                      <label>
+                        Amount per period ({draft.currency || "currency"})
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={formPerPeriod || ""}
+                          onChange={(e) =>
+                            setFormPerPeriod(Number(e.target.value))
+                          }
+                          placeholder="e.g. 2000"
+                        />
+                      </label>
+                      <label>
+                        Frequency
+                        <select
+                          value={formInterval}
+                          onChange={(e) =>
+                            setFormInterval(
+                              e.target.value as InstallmentInterval,
+                            )
+                          }
+                        >
+                          <option value="monthly">Monthly</option>
+                          <option value="biweekly">Every 2 weeks</option>
+                          <option value="weekly">Weekly</option>
+                        </select>
+                      </label>
+                    </>
+                  )}
 
                 <label>
                   {formMode === "deposit-only"
@@ -1096,11 +1243,10 @@ function EditorInner({ initial }: { initial: MoneyDocument }) {
                               : ""
                       }`}
                     >
-                      {/* Editable label + amount */}
                       <div className="schedule-editor-head">
                         <input
                           type="text"
-                          value={row.label}
+                          value={normalizeLabel(row.label)}
                           onChange={(e) =>
                             updateRow(row.id, { label: e.target.value })
                           }
@@ -1127,7 +1273,6 @@ function EditorInner({ initial }: { initial: MoneyDocument }) {
                         />
                       </div>
 
-                      {/* Editable due date + row actions */}
                       <div className="schedule-editor-meta">
                         <input
                           type="date"
@@ -1150,7 +1295,6 @@ function EditorInner({ initial }: { initial: MoneyDocument }) {
                         )}
                       </div>
 
-                      {/* Status line */}
                       <div className="schedule-editor-status">
                         {paid && (
                           <span className="status-pill status-paid">
@@ -1171,7 +1315,6 @@ function EditorInner({ initial }: { initial: MoneyDocument }) {
                         )}
                       </div>
 
-                      {/* Actions */}
                       <div className="schedule-editor-actions">
                         {!paid && !showRecorder && (
                           <>
@@ -1187,6 +1330,14 @@ function EditorInner({ initial }: { initial: MoneyDocument }) {
                             >
                               <Pencil size={14} /> Record
                             </Button>
+                            {partial && (
+                              <Button
+                                variant="secondary"
+                                onClick={() => handleSettleAndRoll(row.id)}
+                              >
+                                <Check size={14} /> Settle &amp; roll
+                              </Button>
+                            )}
                             <Button onClick={() => markFullyPaid(row.id)}>
                               <Check size={14} /> Full
                             </Button>

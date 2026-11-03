@@ -57,7 +57,7 @@ export function Settings() {
 
       <section className="settings-card profile-card">
         <div className="business-mark">
-          {profile ? profile.name.slice(0, 2).toUpperCase() : "—"}
+          {profile ? profile.name.slice(0, 2).toUpperCase() : "-"}
         </div>
         <div>
           <strong>{profile ? profile.name : "No brand profile yet"}</strong>

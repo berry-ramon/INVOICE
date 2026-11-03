@@ -7,6 +7,7 @@ import {
   GripVertical,
   Minus,
   Palette,
+  Pencil,
   Plus,
   Receipt as ReceiptIcon,
   Redo2,
@@ -40,6 +41,8 @@ import {
   buildSchedule,
   installmentOverdue,
   installmentPaid,
+  installmentPartial,
+  outstandingOn,
   scheduleTotals,
 } from "@/lib/schedule";
 import { uuid } from "@/lib/uuid";
@@ -47,12 +50,14 @@ import { useAppStore } from "@/store/app";
 import type {
   Asset,
   BrandProfile,
+  DepositMode,
   DocumentType,
   InstallmentInterval,
   MoneyDocument,
   Orientation,
   PageSize,
   ScheduleMode,
+  ScheduledPayment,
 } from "@/types/models";
 
 const BLOCKS = [
@@ -119,7 +124,7 @@ function EditorInner({ initial }: { initial: MoneyDocument }) {
   const [draft, setDraft] = useState<MoneyDocument>(initial);
   const [history, setHistory] = useState<MoneyDocument[]>([]);
   const [future, setFuture] = useState<MoneyDocument[]>([]);
-  const { saved, dirty } = useDebouncedDocumentSave(draft);
+  const { saved, dirty, saveNow } = useDebouncedDocumentSave(draft);
 
   const [zoom, setZoom] = useState(0.72);
   const [selected, setSelected] = useState<string>();
@@ -134,11 +139,16 @@ function EditorInner({ initial }: { initial: MoneyDocument }) {
   >(null);
   const [toast, setToast] = useState<string | null>(null);
 
-  /* Schedule form state (before generating) */
   const [formMode, setFormMode] = useState<ScheduleMode>(
     draft.scheduleMode ?? "deposit-installments",
   );
+  const [formDepositMode, setFormDepositMode] = useState<DepositMode>(
+    draft.depositMode ?? "percent",
+  );
   const [formDeposit, setFormDeposit] = useState(draft.depositPercent ?? 30);
+  const [formDepositAmount, setFormDepositAmount] = useState(
+    draft.depositAmount ?? 0,
+  );
   const [formCount, setFormCount] = useState(draft.installmentCount ?? 3);
   const [formInterval, setFormInterval] = useState<InstallmentInterval>(
     draft.installmentInterval ?? "monthly",
@@ -149,6 +159,10 @@ function EditorInner({ initial }: { initial: MoneyDocument }) {
   const [formBalanceDate, setFormBalanceDate] = useState(
     draft.dueDate || new Date().toISOString().slice(0, 10),
   );
+
+  /* Record payment inline flow (one row at a time) */
+  const [recordingFor, setRecordingFor] = useState<string | null>(null);
+  const [recordAmount, setRecordAmount] = useState("");
 
   const brand = brandProfiles[0];
   const logo = assets.find((a) => a.id === brand?.logoAssetId);
@@ -162,6 +176,22 @@ function EditorInner({ initial }: { initial: MoneyDocument }) {
   const canHaveSchedule =
     draft.type === "Invoice" || draft.type === "Quotation";
 
+  /* Sync from store on mount if store is newer */
+  useEffect(() => {
+    const fresh = useAppStore
+      .getState()
+      .documents.find((d) => d.id === initial.id);
+    if (!fresh) return;
+    const storeSig = (fresh.paymentSchedule ?? [])
+      .map((p) => `${p.id}:${p.paidAmount ?? 0}`)
+      .join(",");
+    const draftSig = (draft.paymentSchedule ?? [])
+      .map((p) => `${p.id}:${p.paidAmount ?? 0}`)
+      .join(",");
+    if (storeSig !== draftSig) setDraft(fresh);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initial.id]);
+
   const patch = (next: Partial<MoneyDocument>) => {
     setHistory((h) => [...h.slice(-19), draft]);
     setFuture([]);
@@ -171,6 +201,15 @@ function EditorInner({ initial }: { initial: MoneyDocument }) {
   const patchBrand = (next: Partial<BrandProfile>) => {
     if (!brand) return;
     updateBrandProfile({ ...brand, ...next });
+  };
+
+  const updateRow = (id: string, next: Partial<ScheduledPayment>) => {
+    if (!draft.paymentSchedule) return;
+    patch({
+      paymentSchedule: draft.paymentSchedule.map((p) =>
+        p.id === id ? { ...p, ...next } : p,
+      ),
+    });
   };
 
   const undo = () => {
@@ -237,6 +276,7 @@ function EditorInner({ initial }: { initial: MoneyDocument }) {
     }
     if (mod && e.key.toLowerCase() === "s") {
       e.preventDefault();
+      void saveNow();
       return;
     }
     if ((e.key === "Delete" || e.key === "Backspace") && selected) {
@@ -253,7 +293,7 @@ function EditorInner({ initial }: { initial: MoneyDocument }) {
 
   useEffect(() => {
     if (!toast) return;
-    const t = window.setTimeout(() => setToast(null), 3500);
+    const t = window.setTimeout(() => setToast(null), 4000);
     return () => window.clearTimeout(t);
   }, [toast]);
 
@@ -278,7 +318,6 @@ function EditorInner({ initial }: { initial: MoneyDocument }) {
     }
   };
 
-  /* ─── Line items ─────────────────────────────────────── */
   const addLineItem = () =>
     patch({
       items: [
@@ -302,7 +341,7 @@ function EditorInner({ initial }: { initial: MoneyDocument }) {
   const generateSchedule = () => {
     const totalAmount = grandTotal(draft);
     if (totalAmount <= 0) {
-      setToast("Add items first — schedule needs a total.");
+      setToast("Add items first - the schedule needs a total.");
       return;
     }
     if (formMode === "full") {
@@ -313,7 +352,9 @@ function EditorInner({ initial }: { initial: MoneyDocument }) {
       total: totalAmount,
       mode:
         formMode === "deposit-only" ? "deposit-only" : "deposit-installments",
+      depositMode: formDepositMode,
       depositPercent: formDeposit,
+      depositAmount: formDepositAmount,
       installmentCount: formCount,
       interval: formInterval,
       startDate: formStart,
@@ -322,7 +363,10 @@ function EditorInner({ initial }: { initial: MoneyDocument }) {
     patch({
       paymentSchedule: sched,
       scheduleMode: formMode,
-      depositPercent: formDeposit,
+      depositMode: formDepositMode,
+      depositPercent: formDepositMode === "percent" ? formDeposit : undefined,
+      depositAmount:
+        formDepositMode === "fixed" ? formDepositAmount : undefined,
       installmentCount: formCount,
       installmentInterval: formInterval,
     });
@@ -333,59 +377,157 @@ function EditorInner({ initial }: { initial: MoneyDocument }) {
     patch({
       paymentSchedule: undefined,
       scheduleMode: undefined,
+      depositMode: undefined,
       depositPercent: undefined,
+      depositAmount: undefined,
       installmentCount: undefined,
       installmentInterval: undefined,
     });
   };
 
-  /* ─── Mark installment paid (creates a receipt) ──────── */
-  const markPaid = async (installmentId: string) => {
-    if (!draft.paymentSchedule) return;
-    const installment = draft.paymentSchedule.find(
-      (p) => p.id === installmentId,
+  const addCustomRow = () => {
+    const rows = draft.paymentSchedule ?? [];
+    patch({
+      paymentSchedule: [
+        ...rows,
+        {
+          id: uuid(),
+          label: `Payment ${rows.length + 1}`,
+          amount: 0,
+          dueDate: new Date().toISOString().slice(0, 10),
+        },
+      ],
+    });
+  };
+
+  const removeRow = async (id: string) => {
+    const row = draft.paymentSchedule?.find((p) => p.id === id);
+    if (!row) return;
+    if ((row.paidAmount ?? 0) > 0) {
+      setToast("Cannot remove a row that already has payments recorded.");
+      return;
+    }
+    const ok = await confirm({
+      title: "Remove this installment?",
+      message: `${row.label} · ${money(row.amount, draft.currency)}`,
+      danger: true,
+      confirmLabel: "Remove",
+    });
+    if (!ok) return;
+    patch({
+      paymentSchedule: (draft.paymentSchedule ?? []).filter((p) => p.id !== id),
+    });
+  };
+
+  /* ─── Record a payment (partial or full) ─────────────── */
+  const startRecording = (row: ScheduledPayment) => {
+    setRecordingFor(row.id);
+    setRecordAmount(String(outstandingOn(row)));
+  };
+
+  const confirmRecording = async (rowId: string) => {
+    const fresh = useAppStore
+      .getState()
+      .documents.find((d) => d.id === draft.id);
+    if (!fresh?.paymentSchedule) return;
+    const row = fresh.paymentSchedule.find((p) => p.id === rowId);
+    if (!row) return;
+
+    const requested = Number(recordAmount);
+    if (!Number.isFinite(requested) || requested <= 0) return;
+
+    const cap = outstandingOn(row);
+    const amount = Math.min(requested, cap);
+    const isPartial = amount < row.amount - 0.005;
+
+    const receiptNumber = nextDocumentNumber("Receipt", settings, documents);
+    const receipt = buildReceiptFromInstallment(fresh, row, receiptNumber, {
+      amount,
+      partial: (row.paidAmount ?? 0) > 0 || isPartial,
+      brandProfileId: brand?.id,
+    });
+
+    const nextInvoice = applyInstallmentPayment(
+      fresh,
+      row.id,
+      amount,
+      receipt.id,
     );
-    if (!installment) return;
+
+    try {
+      await updateDocument(nextInvoice);
+      await addDocument(receipt);
+      setDraft(nextInvoice);
+      void saveNow(nextInvoice);
+      setRecordingFor(null);
+      setRecordAmount("");
+      setToast(
+        `Receipt ${receipt.number} · ${money(amount, fresh.currency)} recorded.`,
+      );
+    } catch (error) {
+      console.error("Could not save payment:", error);
+      setToast("Save failed. Please try again.");
+    }
+  };
+
+  const markFullyPaid = async (rowId: string) => {
+    const fresh = useAppStore
+      .getState()
+      .documents.find((d) => d.id === draft.id);
+    if (!fresh?.paymentSchedule) return;
+    const row = fresh.paymentSchedule.find((p) => p.id === rowId);
+    if (!row) return;
+    const outstanding = outstandingOn(row);
+    if (outstanding <= 0) return;
+
+    setRecordingFor(null);
+    setRecordAmount(String(outstanding));
 
     const ok = await confirm({
-      title: "Mark this payment as received?",
-      message: `${installment.label} · ${money(
-        installment.amount,
-        draft.currency,
+      title: "Mark fully paid?",
+      message: `${row.label} · recording ${money(
+        outstanding,
+        fresh.currency,
       )}. A receipt will be created.`,
       confirmLabel: "Mark paid",
     });
     if (!ok) return;
 
     const receiptNumber = nextDocumentNumber("Receipt", settings, documents);
-    const receipt = buildReceiptFromInstallment(
-      draft,
-      installment,
-      receiptNumber,
-      brand?.id,
-    );
+    const receipt = buildReceiptFromInstallment(fresh, row, receiptNumber, {
+      amount: outstanding,
+      partial: (row.paidAmount ?? 0) > 0,
+      brandProfileId: brand?.id,
+    });
 
-    await addDocument(receipt);
-    const nextDraft = applyInstallmentPayment(
-      draft,
-      installment.id,
-      installment.amount,
+    const nextInvoice = applyInstallmentPayment(
+      fresh,
+      row.id,
+      outstanding,
       receipt.id,
     );
-    setDraft(nextDraft);
-    await updateDocument(nextDraft);
 
-    setToast(`Receipt ${receipt.number} created.`);
-    navigate(`/editor/${receipt.id}`);
+    try {
+      await updateDocument(nextInvoice);
+      await addDocument(receipt);
+      setDraft(nextInvoice);
+      void saveNow(nextInvoice);
+      setToast(`Receipt ${receipt.number} created.`);
+    } catch (error) {
+      console.error("Could not save payment:", error);
+      setToast("Save failed. Please try again.");
+    }
   };
 
-  /* ─── Send payment request for an unpaid row ─────────── */
-  const sendPaymentRequest = async (installmentId: string) => {
-    if (!draft.paymentSchedule) return;
-    const installment = draft.paymentSchedule.find(
-      (p) => p.id === installmentId,
-    );
-    if (!installment) return;
+  const sendPaymentRequest = async (rowId: string) => {
+    const fresh = useAppStore
+      .getState()
+      .documents.find((d) => d.id === draft.id);
+    if (!fresh?.paymentSchedule) return;
+    const row = fresh.paymentSchedule.find((p) => p.id === rowId);
+    if (!row) return;
+    const outstanding = outstandingOn(row);
+    if (outstanding <= 0) return;
 
     const requestNumber = nextDocumentNumber(
       "Payment Request",
@@ -393,27 +535,33 @@ function EditorInner({ initial }: { initial: MoneyDocument }) {
       documents,
     );
     const request = buildPaymentRequestFromInstallment(
-      draft,
-      installment,
+      fresh,
+      row,
       requestNumber,
-      brand?.id,
+      { amount: outstanding, brandProfileId: brand?.id },
     );
 
-    await addDocument(request);
-    const nextDraft: MoneyDocument = {
-      ...draft,
-      paymentSchedule: draft.paymentSchedule.map((p) =>
-        p.id === installment.id ? { ...p, paymentRequestId: request.id } : p,
+    const nextInvoice: MoneyDocument = {
+      ...fresh,
+      paymentSchedule: fresh.paymentSchedule.map((p) =>
+        p.id === row.id ? { ...p, paymentRequestId: request.id } : p,
       ),
     };
-    setDraft(nextDraft);
-    await updateDocument(nextDraft);
 
-    setToast(`Payment request ${request.number} created.`);
-    navigate(`/editor/${request.id}`);
+    try {
+      await updateDocument(nextInvoice);
+      await addDocument(request);
+      setDraft(nextInvoice);
+      void saveNow(nextInvoice);
+      setToast(`Payment request ${request.number} created.`);
+      navigate(`/editor/${request.id}`);
+    } catch (error) {
+      console.error("Could not create payment request:", error);
+      setToast("Save failed. Please try again.");
+    }
   };
 
-  /* ─── Blocks ─────────────────────────────────────────── */
+  /* ─── Block ops ──────────────────────────────────────── */
   const hidden = draft.hiddenBlocks ?? [];
   const toggleBlock = (blockId: string) => {
     if (hidden.includes(blockId))
@@ -471,8 +619,16 @@ function EditorInner({ initial }: { initial: MoneyDocument }) {
           : false)));
 
   const scheduleTotalsResult = scheduleTotals(draft);
+  const scheduleProgressPct =
+    scheduleTotalsResult.total > 0
+      ? Math.min(
+          100,
+          Math.round(
+            (scheduleTotalsResult.paid / scheduleTotalsResult.total) * 100,
+          ),
+        )
+      : 0;
 
-  /* ─── Render ─────────────────────────────────────────── */
   return (
     <div className="editor-shell">
       <header className="editor-topbar">
@@ -565,11 +721,11 @@ function EditorInner({ initial }: { initial: MoneyDocument }) {
         </div>
         <div className="shortcuts-hint">
           <strong>Shortcuts</strong>
-          <span>⌘Z / ⌘⇧Z — undo / redo</span>
-          <span>⌘S — save</span>
-          <span>Esc — deselect / cancel edit</span>
-          <span>Delete — reset selected block positions</span>
-          <span>Double-click any text — edit in place</span>
+          <span>⌘Z / ⌘⇧Z - undo / redo</span>
+          <span>⌘S - save now</span>
+          <span>Esc - deselect / cancel edit</span>
+          <span>Delete - reset selected block positions</span>
+          <span>Double-click any text - edit in place</span>
         </div>
       </aside>
 
@@ -750,38 +906,6 @@ function EditorInner({ initial }: { initial: MoneyDocument }) {
               <Button variant="secondary" onClick={addLineItem}>
                 <Plus /> Add item
               </Button>
-              {libraryItems.length > 0 && (
-                <select
-                  onChange={(e) => {
-                    const found = libraryItems.find(
-                      (i) => i.id === e.target.value,
-                    );
-                    if (found) {
-                      patch({
-                        items: [
-                          ...draft.items,
-                          {
-                            id: uuid(),
-                            description: found.name,
-                            quantity: 1,
-                            rate: found.rate,
-                          },
-                        ],
-                      });
-                      e.target.value = "";
-                    }
-                  }}
-                  defaultValue=""
-                  className="rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
-                >
-                  <option value="">Add from library…</option>
-                  {libraryItems.map((i) => (
-                    <option key={i.id} value={i.id}>
-                      {i.name} — {money(i.rate, draft.currency)}
-                    </option>
-                  ))}
-                </select>
-              )}
             </div>
           </div>
         )}
@@ -818,16 +942,61 @@ function EditorInner({ initial }: { initial: MoneyDocument }) {
 
                 {(formMode === "deposit-installments" ||
                   formMode === "deposit-only") && (
-                  <label>
-                    Deposit (%)
-                    <input
-                      type="number"
-                      min="0"
-                      max="100"
-                      value={formDeposit}
-                      onChange={(e) => setFormDeposit(Number(e.target.value))}
-                    />
-                  </label>
+                  <>
+                    <label>
+                      Deposit as
+                      <div className="segmented">
+                        <button
+                          type="button"
+                          className={
+                            formDepositMode === "percent" ? "active" : ""
+                          }
+                          onClick={() => setFormDepositMode("percent")}
+                        >
+                          %
+                        </button>
+                        <button
+                          type="button"
+                          className={
+                            formDepositMode === "fixed" ? "active" : ""
+                          }
+                          onClick={() => setFormDepositMode("fixed")}
+                        >
+                          Amount
+                        </button>
+                      </div>
+                    </label>
+
+                    {formDepositMode === "percent" ? (
+                      <label>
+                        Deposit %
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="0.01"
+                          value={formDeposit}
+                          onChange={(e) =>
+                            setFormDeposit(Number(e.target.value))
+                          }
+                        />
+                      </label>
+                    ) : (
+                      <label>
+                        Deposit amount ({draft.currency || "currency"})
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={formDepositAmount || ""}
+                          onChange={(e) =>
+                            setFormDepositAmount(Number(e.target.value))
+                          }
+                          placeholder="e.g. 5000"
+                        />
+                      </label>
+                    )}
+                  </>
                 )}
 
                 {formMode === "deposit-installments" && (
@@ -837,7 +1006,7 @@ function EditorInner({ initial }: { initial: MoneyDocument }) {
                       <input
                         type="number"
                         min="1"
-                        max="12"
+                        max="24"
                         value={formCount}
                         onChange={(e) => setFormCount(Number(e.target.value))}
                       />
@@ -884,50 +1053,184 @@ function EditorInner({ initial }: { initial: MoneyDocument }) {
               </>
             ) : (
               <>
-                <div className="text-xs text-[var(--muted)]">
-                  Total: {money(grandTotal(draft), draft.currency)} · Paid:{" "}
-                  {money(scheduleTotalsResult.paid, draft.currency)}
+                <div className="schedule-progress-box">
+                  <div className="schedule-progress-head">
+                    <strong>
+                      {scheduleTotalsResult.paid >= scheduleTotalsResult.total
+                        ? "Fully paid"
+                        : `${money(
+                            scheduleTotalsResult.paid,
+                            draft.currency,
+                          )} of ${money(
+                            scheduleTotalsResult.total,
+                            draft.currency,
+                          )}`}
+                    </strong>
+                    <span>{scheduleProgressPct}%</span>
+                  </div>
+                  <div className="schedule-progress-bar">
+                    <div
+                      className="schedule-progress-fill"
+                      style={{ width: `${scheduleProgressPct}%` }}
+                    />
+                  </div>
                 </div>
 
                 {draft.paymentSchedule.map((row) => {
                   const paid = installmentPaid(row);
+                  const partial = installmentPartial(row);
                   const overdue = installmentOverdue(row);
+                  const outstanding = outstandingOn(row);
+                  const showRecorder = recordingFor === row.id;
+
                   return (
                     <div
                       key={row.id}
                       className={`schedule-editor-row ${
-                        paid ? "is-paid" : overdue ? "is-overdue" : ""
+                        paid
+                          ? "is-paid"
+                          : partial
+                            ? "is-partial"
+                            : overdue
+                              ? "is-overdue"
+                              : ""
                       }`}
                     >
+                      {/* Editable label + amount */}
                       <div className="schedule-editor-head">
-                        <strong>{row.label}</strong>
-                        <span>{money(row.amount, draft.currency)}</span>
+                        <input
+                          type="text"
+                          value={row.label}
+                          onChange={(e) =>
+                            updateRow(row.id, { label: e.target.value })
+                          }
+                          className="schedule-input schedule-input-label"
+                          placeholder="Label"
+                          disabled={paid}
+                        />
+                        <input
+                          key={`${row.id}-${row.amount}`}
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          defaultValue={row.amount}
+                          onBlur={(e) => {
+                            const n = Number(e.target.value);
+                            if (Number.isFinite(n) && n >= 0) {
+                              updateRow(row.id, { amount: n });
+                            } else {
+                              e.target.value = String(row.amount);
+                            }
+                          }}
+                          className="schedule-input schedule-input-amount"
+                          disabled={paid || (row.paidAmount ?? 0) > 0}
+                        />
                       </div>
+
+                      {/* Editable due date + row actions */}
                       <div className="schedule-editor-meta">
-                        Due {formatDate(row.dueDate)}
-                        {paid && " · Paid"}
-                        {overdue && !paid && " · Overdue"}
-                      </div>
-                      <div className="schedule-editor-actions">
+                        <input
+                          type="date"
+                          value={row.dueDate}
+                          onChange={(e) =>
+                            updateRow(row.id, { dueDate: e.target.value })
+                          }
+                          className="schedule-input schedule-input-date"
+                          disabled={paid}
+                        />
                         {!paid && (
+                          <button
+                            type="button"
+                            className="schedule-remove"
+                            onClick={() => removeRow(row.id)}
+                            title="Remove row"
+                          >
+                            ×
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Status line */}
+                      <div className="schedule-editor-status">
+                        {paid && (
+                          <span className="status-pill status-paid">
+                            ✓ Fully paid
+                          </span>
+                        )}
+                        {partial && (
+                          <span className="status-pill status-partial">
+                            {money(row.paidAmount ?? 0, draft.currency)} of{" "}
+                            {money(row.amount, draft.currency)} ·{" "}
+                            {money(outstanding, draft.currency)} left
+                          </span>
+                        )}
+                        {!paid && !partial && overdue && (
+                          <span className="status-pill status-overdue">
+                            Overdue
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Actions */}
+                      <div className="schedule-editor-actions">
+                        {!paid && !showRecorder && (
                           <>
                             <Button
                               variant="secondary"
                               onClick={() => sendPaymentRequest(row.id)}
                             >
-                              <Send size={14} /> Send request
+                              <Send size={14} /> Request
                             </Button>
-                            <Button onClick={() => markPaid(row.id)}>
-                              <Check size={14} /> Mark paid
+                            <Button
+                              variant="secondary"
+                              onClick={() => startRecording(row)}
+                            >
+                              <Pencil size={14} /> Record
+                            </Button>
+                            <Button onClick={() => markFullyPaid(row.id)}>
+                              <Check size={14} /> Full
                             </Button>
                           </>
                         )}
+
+                        {!paid && showRecorder && (
+                          <div className="record-payment-inline">
+                            <label className="record-amount-label">
+                              Amount received
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={recordAmount}
+                                onChange={(e) =>
+                                  setRecordAmount(e.target.value)
+                                }
+                                autoFocus
+                              />
+                            </label>
+                            <div className="record-actions">
+                              <Button
+                                variant="secondary"
+                                onClick={() => {
+                                  setRecordingFor(null);
+                                  setRecordAmount("");
+                                }}
+                              >
+                                Cancel
+                              </Button>
+                              <Button onClick={() => confirmRecording(row.id)}>
+                                <Check size={14} /> Confirm
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+
                         {paid && row.receiptId && (
                           <Button
                             variant="secondary"
                             onClick={() => navigate(`/editor/${row.receiptId}`)}
                           >
-                            <ReceiptIcon size={14} /> View receipt
+                            <ReceiptIcon size={14} /> View last receipt
                           </Button>
                         )}
                       </div>
@@ -935,6 +1238,9 @@ function EditorInner({ initial }: { initial: MoneyDocument }) {
                   );
                 })}
 
+                <Button variant="secondary" onClick={addCustomRow}>
+                  <Plus size={14} /> Add custom row
+                </Button>
                 <Button variant="secondary" onClick={clearSchedule}>
                   <RotateCcw size={16} /> Clear schedule
                 </Button>
@@ -946,7 +1252,7 @@ function EditorInner({ initial }: { initial: MoneyDocument }) {
         {selected === "totals" && (
           <div className="properties">
             <label>
-              Amount paid
+              Amount paid (legacy)
               <input
                 type="number"
                 min="0"

@@ -98,9 +98,9 @@ export function Items() {
                 <strong>{item.name}</strong>
                 {item.description && <small>{item.description}</small>}
               </span>
-              <span>{item.category || "—"}</span>
+              <span>{item.category || "-"}</span>
               <span>{item.unit}</span>
-              <span>{item.taxRate ? `${item.taxRate}%` : "—"}</span>
+              <span>{item.taxRate ? `${item.taxRate}%` : "-"}</span>
               <strong>{money(item.rate, settings.currency)}</strong>
               <IconButton
                 label="Delete item"

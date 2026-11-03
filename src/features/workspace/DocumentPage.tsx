@@ -14,6 +14,7 @@ import {
 import {
   installmentOverdue,
   installmentPaid,
+  installmentPartial,
   scheduleTotals,
 } from "@/lib/schedule";
 import type { Asset, BrandProfile, MoneyDocument } from "@/types/models";
@@ -96,6 +97,11 @@ export function DocumentPage({
   const schedule = doc.paymentSchedule ?? [];
   const linkedSchedule = linkedInvoice?.paymentSchedule ?? [];
   const totals = scheduleTotals(doc);
+  const schedulePct =
+    totals.total > 0
+      ? Math.min(100, Math.round((totals.paid / totals.total) * 100))
+      : 0;
+  const paidRows = schedule.filter(installmentPaid).length;
 
   const showPaidWatermark =
     doc.paidWatermark === true ||
@@ -142,7 +148,6 @@ export function DocumentPage({
         target.classList.add("element-dragging");
       }
       if (!dragStarted) return;
-
       const paperEl = target.closest(".document-paper") as HTMLElement | null;
       const scale = paperEl
         ? paperEl.getBoundingClientRect().width / 794 || 1
@@ -162,14 +167,12 @@ export function DocumentPage({
         target.releasePointerCapture(pointerId);
       } catch {}
       target.classList.remove("element-dragging");
-
       const dx = ev.clientX - startX;
       const dy = ev.clientY - startY;
       const paperEl = target.closest(".document-paper") as HTMLElement | null;
       const scale = paperEl
         ? paperEl.getBoundingClientRect().width / 794 || 1
         : 1;
-
       onPatch?.({
         elementOffsets: {
           ...(doc.elementOffsets ?? {}),
@@ -195,23 +198,19 @@ export function DocumentPage({
     if (preview) return;
     e.stopPropagation();
     e.preventDefault();
-
     const handle = e.currentTarget as HTMLElement;
     const wrapper = handle.parentElement as HTMLElement | null;
     const img = wrapper?.querySelector("img") as HTMLImageElement | null;
     if (!wrapper || !img) return;
-
     const pointerId = e.pointerId;
     const startX = e.clientX;
     const startWidth = doc[field] ?? (field === "logoWidthMm" ? 22 : 40);
     const startPx = img.getBoundingClientRect().width;
     if (startPx === 0) return;
     const pxPerMm = startPx / startWidth;
-
     try {
       handle.setPointerCapture(pointerId);
     } catch {}
-
     const onMove = (ev: PointerEvent) => {
       if (ev.pointerId !== pointerId) return;
       const deltaMm = (ev.clientX - startX) / pxPerMm;
@@ -220,7 +219,6 @@ export function DocumentPage({
         [field]: Math.round(next * 10) / 10,
       } as Partial<MoneyDocument>);
     };
-
     const onUp = (ev: PointerEvent) => {
       if (ev.pointerId !== pointerId) return;
       try {
@@ -230,7 +228,6 @@ export function DocumentPage({
       handle.removeEventListener("pointerup", onUp);
       handle.removeEventListener("pointercancel", onUp);
     };
-
     handle.addEventListener("pointermove", onMove);
     handle.addEventListener("pointerup", onUp);
     handle.addEventListener("pointercancel", onUp);
@@ -240,26 +237,21 @@ export function DocumentPage({
     if (preview) return;
     e.stopPropagation();
     e.preventDefault();
-
     const grip = e.currentTarget as HTMLElement;
     const block = grip.closest(".paper-block") as HTMLElement | null;
     if (!block) return;
-
     const pointerId = e.pointerId;
     const startY = e.clientY;
     const startIndex = order.indexOf(blockId);
     const blockHeight = block.getBoundingClientRect().height || 80;
-
     try {
       grip.setPointerCapture(pointerId);
     } catch {}
     block.classList.add("reordering");
-
     const onMove = (ev: PointerEvent) => {
       if (ev.pointerId !== pointerId) return;
       block.style.transform = `translateY(${ev.clientY - startY}px)`;
     };
-
     const onUp = (ev: PointerEvent) => {
       if (ev.pointerId !== pointerId) return;
       try {
@@ -270,7 +262,6 @@ export function DocumentPage({
       grip.removeEventListener("pointercancel", onUp);
       block.style.transform = "";
       block.classList.remove("reordering");
-
       const steps = Math.round((ev.clientY - startY) / blockHeight);
       if (steps !== 0 && startIndex >= 0) {
         const newIndex = Math.max(
@@ -285,7 +276,6 @@ export function DocumentPage({
         }
       }
     };
-
     grip.addEventListener("pointermove", onMove);
     grip.addEventListener("pointerup", onUp);
     grip.addEventListener("pointercancel", onUp);
@@ -315,7 +305,6 @@ export function DocumentPage({
       </div>
     );
 
-  /* ─── HEADER ─────────────────────────────────────────── */
   const renderHeader = () => (
     <div className="invoice-header">
       <div className="brand-lockup">
@@ -414,13 +403,10 @@ export function DocumentPage({
           <span className="payment-request-ref">
             For {linkedInvoice.type} {linkedInvoice.number}
             {(() => {
-              const idx = linkedInvoice.paymentSchedule?.findIndex(
+              const row = linkedInvoice.paymentSchedule?.find(
                 (p) => p.id === doc.targetInstallmentId,
               );
-              const count = linkedInvoice.paymentSchedule?.length ?? 0;
-              if (idx === undefined || idx < 0 || count === 0) return null;
-              const row = linkedInvoice.paymentSchedule![idx];
-              return ` · ${row.label}`;
+              return row ? ` · ${row.label}` : null;
             })()}
           </span>
         )}
@@ -428,7 +414,6 @@ export function DocumentPage({
     </div>
   );
 
-  /* ─── ADDRESS ────────────────────────────────────────── */
   const renderAddress = () => (
     <div className="invoice-addresses">
       <div>
@@ -500,7 +485,6 @@ export function DocumentPage({
     </div>
   );
 
-  /* ─── ITEMS ──────────────────────────────────────────── */
   const renderItems = () => (
     <div className="invoice-table">
       <div
@@ -518,9 +502,9 @@ export function DocumentPage({
             <strong>No items yet</strong>
             <small>Add your first line item</small>
           </div>
-          <span>—</span>
-          <span>—</span>
-          <strong>—</strong>
+          <span>-</span>
+          <span>-</span>
+          <strong>-</strong>
         </div>
       )}
       {doc.items.map((item) => (
@@ -550,32 +534,69 @@ export function DocumentPage({
     </div>
   );
 
-  /* ─── SCHEDULE ───────────────────────────────────────── */
+  /* ─── SCHEDULE (partial-aware) ───────────────────────── */
   const renderSchedule = () => {
     const rows = isPaymentRequest ? linkedSchedule : schedule;
     if (!rows.length) return null;
 
+    const hasOverdue = totals.overdue > 0;
+    const hasUpcoming = totals.upcoming > 0;
+    const hasPaid = totals.paid > 0;
+
     return (
       <div className="invoice-schedule">
         <small>PAYMENT SCHEDULE</small>
+
+        {!isPaymentRequest && (
+          <div className="schedule-progress-canvas">
+            <div className="schedule-progress-canvas-head">
+              <span>
+                {paidRows} of {rows.length} payments received
+              </span>
+              <strong>{schedulePct}%</strong>
+            </div>
+            <div className="schedule-progress-canvas-bar">
+              <div
+                className="schedule-progress-canvas-fill"
+                style={{ width: `${schedulePct}%` }}
+              />
+            </div>
+          </div>
+        )}
+
         <div className="schedule-table">
           {rows.map((row) => {
             const paidRow = installmentPaid(row);
-            const overdue = installmentOverdue(row);
+            const partialRow = installmentPartial(row);
+            const overdueRow = installmentOverdue(row);
             const isTarget =
               isPaymentRequest && row.id === doc.targetInstallmentId;
             return (
               <div
                 key={row.id}
-                className={`schedule-row ${paidRow ? "is-paid" : ""} ${
-                  overdue ? "is-overdue" : ""
-                } ${isTarget ? "is-target" : ""}`}
+                className={`schedule-row ${
+                  paidRow ? "is-paid" : partialRow ? "is-partial" : ""
+                } ${overdueRow ? "is-overdue" : ""} ${
+                  isTarget ? "is-target" : ""
+                }`}
               >
                 <span className="schedule-dot" aria-hidden />
-                <span className="schedule-label">{row.label}</span>
+                <span className="schedule-label">
+                  {paidRow ? "✓ " : partialRow ? "◐ " : ""}
+                  {row.label}
+                </span>
                 <span className="schedule-date">{formatDate(row.dueDate)}</span>
                 <span className="schedule-amount">
-                  {money(row.amount, doc.currency)}
+                  {partialRow ? (
+                    <>
+                      <strong>
+                        {money(row.paidAmount ?? 0, doc.currency)}
+                      </strong>
+                      <small>of {money(row.amount, doc.currency)}</small>
+                    </>
+                  ) : (
+                    money(row.amount, doc.currency)
+                  )}
                 </span>
               </div>
             );
@@ -583,20 +604,27 @@ export function DocumentPage({
         </div>
 
         {!isPaymentRequest && (
-          <div className="schedule-summary">
-            <div>
-              <span>
-                {totals.dueNow > 0 ? "Amount due now" : "Paid to date"}
-              </span>
-              <strong>
-                {money(
-                  totals.dueNow > 0 ? totals.dueNow : totals.paid,
-                  doc.currency,
-                )}
-              </strong>
-            </div>
-            <div>
-              <span>Remaining balance</span>
+          <div className="schedule-summary-multi">
+            {hasPaid && (
+              <div className="schedule-summary-line is-paid">
+                <span>Paid to date</span>
+                <strong>{money(totals.paid, doc.currency)}</strong>
+              </div>
+            )}
+            {hasOverdue && (
+              <div className="schedule-summary-line is-overdue">
+                <span>Overdue now</span>
+                <strong>{money(totals.overdue, doc.currency)}</strong>
+              </div>
+            )}
+            {hasUpcoming && (
+              <div className="schedule-summary-line is-upcoming">
+                <span>Upcoming</span>
+                <strong>{money(totals.upcoming, doc.currency)}</strong>
+              </div>
+            )}
+            <div className="schedule-summary-line is-total">
+              <span>Total outstanding</span>
               <strong>{money(totals.balance, doc.currency)}</strong>
             </div>
           </div>
@@ -605,86 +633,89 @@ export function DocumentPage({
     );
   };
 
-  /* ─── TOTALS ─────────────────────────────────────────── */
-  const renderTotals = () => (
-    <div className="invoice-summary">
-      <div className="payment-note">
-        {has(brand?.paymentDetails) && (
-          <>
-            <small>PAYMENT DETAILS</small>
-            <EditableText
-              value={brand!.paymentDetails}
-              onChange={(v) => onBrandPatch?.({ paymentDetails: v })}
-              className="draggable-element"
-              style={offsetStyle("paymentDetails")}
-              onPointerDown={(e) => startDrag("paymentDetails", e)}
-              editable={!preview}
-            />
-          </>
-        )}
-        {signature && (
-          <div className="signature-wrap">
-            <div
-              className="signature-resize-wrapper draggable-element"
-              style={{
-                width: `${doc.signatureWidthMm ?? 40}mm`,
-                ...offsetStyle("signature"),
-              }}
-              onPointerDown={(e) => startDrag("signature", e)}
-            >
-              <img
-                src={signature.dataUrl}
-                alt=""
-                draggable={false}
-                className="logo-img"
+  const renderTotals = () => {
+    const hasSchedule = schedule.length > 0;
+    return (
+      <div className="invoice-summary">
+        <div className="payment-note">
+          {has(brand?.paymentDetails) && (
+            <>
+              <small>PAYMENT DETAILS</small>
+              <EditableText
+                value={brand!.paymentDetails}
+                onChange={(v) => onBrandPatch?.({ paymentDetails: v })}
+                className="draggable-element"
+                style={offsetStyle("paymentDetails")}
+                onPointerDown={(e) => startDrag("paymentDetails", e)}
+                editable={!preview}
               />
-              {!preview && (
-                <div
-                  className="logo-resize-handle"
-                  onPointerDown={(e) =>
-                    startImageResize("signatureWidthMm", 20, 100, e)
-                  }
+            </>
+          )}
+          {signature && (
+            <div className="signature-wrap">
+              <div
+                className="signature-resize-wrapper draggable-element"
+                style={{
+                  width: `${doc.signatureWidthMm ?? 40}mm`,
+                  ...offsetStyle("signature"),
+                }}
+                onPointerDown={(e) => startDrag("signature", e)}
+              >
+                <img
+                  src={signature.dataUrl}
+                  alt=""
+                  draggable={false}
+                  className="logo-img"
                 />
-              )}
+                {!preview && (
+                  <div
+                    className="logo-resize-handle"
+                    onPointerDown={(e) =>
+                      startImageResize("signatureWidthMm", 20, 100, e)
+                    }
+                  />
+                )}
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
+        <dl
+          className="draggable-element"
+          style={offsetStyle("totalsList")}
+          onPointerDown={(e) => startDrag("totalsList", e)}
+        >
+          <dt>Subtotal</dt>
+          <dd>{money(subtotal, doc.currency)}</dd>
+
+          {hasTax && (
+            <>
+              <dt>Tax · {doc.taxRate}%</dt>
+              <dd>{money(tax, doc.currency)}</dd>
+            </>
+          )}
+
+          <dt>Total</dt>
+          <dd>{money(totalWithTax, doc.currency)}</dd>
+
+          {(paid > 0 || hasSchedule) && (
+            <>
+              <dt>Amount paid</dt>
+              <dd>{money(paid, doc.currency)}</dd>
+            </>
+          )}
+
+          <dt className="grand-total">Balance due</dt>
+          <dd className="grand-total">
+            {balance === 0 && paid > 0 && (
+              <span className="paid-pill">PAID</span>
+            )}
+            {money(balance, doc.currency)}
+          </dd>
+        </dl>
       </div>
-      <dl
-        className="draggable-element"
-        style={offsetStyle("totalsList")}
-        onPointerDown={(e) => startDrag("totalsList", e)}
-      >
-        <dt>Subtotal</dt>
-        <dd>{money(subtotal, doc.currency)}</dd>
+    );
+  };
 
-        {hasTax && (
-          <>
-            <dt>Tax · {doc.taxRate}%</dt>
-            <dd>{money(tax, doc.currency)}</dd>
-          </>
-        )}
-
-        <dt>Total</dt>
-        <dd>{money(totalWithTax, doc.currency)}</dd>
-
-        {paid > 0 && (
-          <>
-            <dt>Amount paid</dt>
-            <dd>{money(paid, doc.currency)}</dd>
-          </>
-        )}
-
-        <dt className="grand-total">Balance due</dt>
-        <dd className="grand-total">
-          {balance === 0 && paid > 0 && <span className="paid-pill">PAID</span>}
-          {money(balance, doc.currency)}
-        </dd>
-      </dl>
-    </div>
-  );
-
-  /* ─── NOTES ──────────────────────────────────────────── */
   const renderNotes = () =>
     has(doc.notes) ? (
       <div className="invoice-notes">
@@ -702,7 +733,6 @@ export function DocumentPage({
       </div>
     ) : null;
 
-  /* ─── FOOTER ─────────────────────────────────────────── */
   const renderFooter = () => (
     <>
       <div

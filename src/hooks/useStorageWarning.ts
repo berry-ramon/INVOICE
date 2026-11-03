@@ -11,7 +11,7 @@ export function useStorageWarning() {
         if (cancelled) return;
         if (usage && quota) setPercent((usage / quota) * 100);
       } catch {
-        // ignore — some browsers throw if not HTTPS
+        // ignore - some browsers throw if not HTTPS
       }
     };
     check();

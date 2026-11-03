@@ -1626,7 +1626,7 @@
   margin-top: 12px;
 }
 
-/* Block grip — drag to reorder */
+/* Block grip - drag to reorder */
 .paper-block .block-grip {
   position: absolute;
   top: 4px;
@@ -1679,7 +1679,7 @@
   margin-top: auto;
 }
 
-/* Remove old auto-margin on notes — footer now owns it */
+/* Remove old auto-margin on notes - footer now owns it */
 .document-paper .invoice-notes {
   margin-top: 0;
 }
@@ -2104,7 +2104,7 @@ input.editable-input[type="date"] {
 }
 
 /* The old footer element style is superseded by the block
-   layout — keep the rule for safety, but never show the
+   layout - keep the rule for safety, but never show the
    duplicate bar. */
 .document-paper > footer {
   display: none !important;
@@ -2415,7 +2415,7 @@ input.editable-input[type="date"] {
 }
 
 /* The brand-info wrapper that used to be styled by
-   `.brand-lockup > div:last-child` — align it explicitly. */
+   `.brand-lockup > div:last-child` - align it explicitly. */
 .brand-info {
   display: grid;
   gap: 4px;
@@ -2580,7 +2580,7 @@ input.editable-input[type="date"] {
   padding-right: 0;
 }
 
-/* ─── Footer seal placement — right below email/name ─── */
+/* ─── Footer seal placement - right below email/name ─── */
 
 /* ─── Empty items hint inside the canvas ─────────────── */
 .invoice-empty {

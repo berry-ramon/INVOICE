@@ -1,4 +1,5 @@
 import type {
+  DepositMode,
   InstallmentInterval,
   MoneyDocument,
   ScheduledPayment,
@@ -6,7 +7,13 @@ import type {
 import { formatDate, grandTotal, money } from "@/lib/data";
 import { uuid } from "@/lib/uuid";
 
-/* ─── Date arithmetic ─────────────────────────────────── */
+/* ─── Percent formatter (drops trailing .0) ───────────── */
+function formatPct(n: number): string {
+  if (!Number.isFinite(n)) return "0";
+  const rounded = Math.round(n * 10) / 10;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+}
+
 export function addInterval(
   baseDate: string,
   interval: InstallmentInterval,
@@ -19,44 +26,57 @@ export function addInterval(
   return d.toISOString().slice(0, 10);
 }
 
-/* ─── Generate a full schedule ───────────────────────── */
+/* ─── Build schedule from either a percent or a fixed deposit ─ */
 export function buildSchedule(opts: {
   total: number;
   mode: "deposit-installments" | "deposit-only";
+  depositMode: DepositMode;
   depositPercent: number;
+  depositAmount: number;
   installmentCount: number;
   interval: InstallmentInterval;
   startDate: string;
   balanceDate?: string;
 }): ScheduledPayment[] {
   const total = Math.max(0, opts.total);
-  const depositAmount = Math.round((total * opts.depositPercent) / 100);
+
+  let depositValue: number;
+  let depositLabel: string;
+  if (opts.depositMode === "fixed") {
+    depositValue =
+      Math.round(Math.min(Math.max(0, opts.depositAmount), total) * 100) / 100;
+    depositLabel = "Deposit";
+  } else {
+    const pct = Math.round(opts.depositPercent * 100) / 100;
+    depositValue = Math.round(((total * pct) / 100) * 100) / 100;
+    depositLabel = `Deposit (${formatPct(pct)}%)`;
+  }
 
   if (opts.mode === "deposit-only") {
     return [
       {
         id: uuid(),
-        label: `Deposit (${opts.depositPercent}%)`,
-        amount: depositAmount,
+        label: depositLabel,
+        amount: depositValue,
         dueDate: opts.startDate,
       },
       {
         id: uuid(),
         label: "Balance",
-        amount: total - depositAmount,
+        amount: Math.max(0, total - depositValue),
         dueDate: opts.balanceDate ?? opts.startDate,
       },
     ];
   }
 
-  const remaining = total - depositAmount;
+  const remaining = Math.max(0, total - depositValue);
   const baseInstall =
     Math.round((remaining / opts.installmentCount) * 100) / 100;
   const rows: ScheduledPayment[] = [
     {
       id: uuid(),
-      label: `Deposit (${opts.depositPercent}%)`,
-      amount: depositAmount,
+      label: depositLabel,
+      amount: depositValue,
       dueDate: opts.startDate,
     },
   ];
@@ -77,9 +97,18 @@ export function buildSchedule(opts: {
   return rows;
 }
 
-/* ─── Status helpers ──────────────────────────────────── */
+/* ─── Row state helpers ───────────────────────────────── */
+export function outstandingOn(p: ScheduledPayment): number {
+  return Math.max(0, p.amount - (p.paidAmount ?? 0));
+}
+
 export function installmentPaid(p: ScheduledPayment): boolean {
   return (p.paidAmount ?? 0) >= p.amount - 0.005;
+}
+
+export function installmentPartial(p: ScheduledPayment): boolean {
+  const paid = p.paidAmount ?? 0;
+  return paid > 0 && paid < p.amount - 0.005;
 }
 
 export function installmentOverdue(
@@ -91,7 +120,7 @@ export function installmentOverdue(
   return new Date(p.dueDate).getTime() < today.getTime();
 }
 
-/* ─── Summary ─────────────────────────────────────────── */
+/* ─── Totals ─────────────────────────────────────────── */
 export function scheduleTotals(doc: MoneyDocument) {
   const schedule = doc.paymentSchedule ?? [];
   const total = grandTotal(doc);
@@ -99,25 +128,47 @@ export function scheduleTotals(doc: MoneyDocument) {
   const balance = Math.max(0, total - paid);
 
   const today = new Date();
-  const dueNow = schedule
-    .filter((p) => !installmentPaid(p) && new Date(p.dueDate) <= today)
-    .reduce((s, p) => s + (p.amount - (p.paidAmount ?? 0)), 0);
+  const todayStart = new Date(
+    today.getFullYear(),
+    today.getMonth(),
+    today.getDate(),
+  ).getTime();
 
-  const nextUpcoming = schedule
-    .filter((p) => !installmentPaid(p))
-    .sort((a, b) => (a.dueDate < b.dueDate ? -1 : 1))[0];
+  let overdue = 0;
+  let upcoming = 0;
+  let nextUpcoming: ScheduledPayment | undefined;
 
-  return { total, paid, balance, dueNow, nextUpcoming };
+  for (const p of schedule) {
+    if (installmentPaid(p)) continue;
+    const outstanding = outstandingOn(p);
+    const due = p.dueDate ? new Date(p.dueDate).getTime() : Infinity;
+    if (due <= todayStart) {
+      overdue += outstanding;
+    } else {
+      upcoming += outstanding;
+      if (
+        !nextUpcoming ||
+        new Date(p.dueDate).getTime() < new Date(nextUpcoming.dueDate).getTime()
+      ) {
+        nextUpcoming = p;
+      }
+    }
+  }
+
+  return { total, paid, balance, overdue, upcoming, nextUpcoming };
 }
 
-/* ─── Build a Receipt from an installment ─────────────── */
+/* ─── Receipt from an installment (partial-aware) ────── */
 export function buildReceiptFromInstallment(
   source: MoneyDocument,
   installment: ScheduledPayment,
   receiptNumber: string,
-  brandProfileId?: string,
+  opts?: { amount?: number; brandProfileId?: string; partial?: boolean },
 ): MoneyDocument {
   const today = new Date().toISOString().slice(0, 10);
+  const amount = opts?.amount ?? installment.amount;
+  const partial = opts?.partial ?? false;
+
   return {
     id: uuid(),
     type: "Receipt",
@@ -131,13 +182,17 @@ export function buildReceiptFromInstallment(
     dueDate: "",
     currency: source.currency,
     status: "Paid",
-    notes: `Payment received for ${source.type} ${source.number} · ${installment.label}`,
+    notes: partial
+      ? `Part payment received for ${source.type} ${source.number} · ${installment.label}`
+      : `Payment received for ${source.type} ${source.number} · ${installment.label}`,
     items: [
       {
         id: uuid(),
-        description: `${installment.label} · ${source.type} ${source.number}`,
+        description: `${partial ? "Part payment · " : ""}${
+          installment.label
+        } · ${source.type} ${source.number}`,
         quantity: 1,
-        rate: installment.amount,
+        rate: amount,
       },
     ],
     accent: source.accent,
@@ -145,20 +200,22 @@ export function buildReceiptFromInstallment(
     pageSize: source.pageSize,
     orientation: source.orientation,
     paidWatermark: true,
-    amountPaid: installment.amount,
+    amountPaid: amount,
     linkedInvoiceId: source.id,
-    brandProfileId: source.brandProfileId ?? brandProfileId,
+    brandProfileId: source.brandProfileId ?? opts?.brandProfileId,
   };
 }
 
-/* ─── Build a Payment Request from an installment ─────── */
+/* ─── Payment request (partial-aware) ────────────────── */
 export function buildPaymentRequestFromInstallment(
   source: MoneyDocument,
   installment: ScheduledPayment,
   requestNumber: string,
-  brandProfileId?: string,
+  opts?: { amount?: number; brandProfileId?: string },
 ): MoneyDocument {
   const today = new Date().toISOString().slice(0, 10);
+  const amount = opts?.amount ?? outstandingOn(installment);
+
   return {
     id: uuid(),
     type: "Payment Request",
@@ -172,13 +229,18 @@ export function buildPaymentRequestFromInstallment(
     dueDate: installment.dueDate,
     currency: source.currency,
     status: "Issued",
-    notes: `This is a request for ${installment.label.toLowerCase()} of ${source.type} ${source.number}. Kindly pay ${money(installment.amount, source.currency)} by ${formatDate(installment.dueDate)}.`,
+    notes: `This is a request for ${installment.label.toLowerCase()} of ${
+      source.type
+    } ${source.number}. Kindly pay ${money(
+      amount,
+      source.currency,
+    )} by ${formatDate(installment.dueDate)}.`,
     items: [
       {
         id: uuid(),
         description: installment.label,
         quantity: 1,
-        rate: installment.amount,
+        rate: amount,
       },
     ],
     accent: source.accent,
@@ -188,31 +250,36 @@ export function buildPaymentRequestFromInstallment(
     paidWatermark: false,
     linkedInvoiceId: source.id,
     targetInstallmentId: installment.id,
-    brandProfileId: source.brandProfileId ?? brandProfileId,
+    brandProfileId: source.brandProfileId ?? opts?.brandProfileId,
   };
 }
 
-/* ─── Mark an installment paid on the source doc ─────── */
+/* ─── Apply payment (accumulates; clamps to row amount) ─ */
 export function applyInstallmentPayment(
   source: MoneyDocument,
   installmentId: string,
-  paidAmount: number,
+  incrementAmount: number,
   receiptId?: string,
 ): MoneyDocument {
   const today = new Date().toISOString();
-  const schedule = (source.paymentSchedule ?? []).map((p) =>
-    p.id === installmentId
-      ? {
-          ...p,
-          paidAt: today,
-          paidAmount,
-          receiptId: receiptId ?? p.receiptId,
-        }
-      : p,
-  );
+  const increment = Math.max(0, incrementAmount);
+
+  const schedule = (source.paymentSchedule ?? []).map((p) => {
+    if (p.id !== installmentId) return p;
+    const nextPaid = Math.min(p.amount, (p.paidAmount ?? 0) + increment);
+    const ids = p.receiptIds ?? (p.receiptId ? [p.receiptId] : []);
+    const nextIds = receiptId ? [...ids, receiptId] : ids;
+    return {
+      ...p,
+      paidAt: today,
+      paidAmount: nextPaid,
+      receiptId: receiptId ?? p.receiptId,
+      receiptIds: nextIds,
+    };
+  });
 
   const allPaid = schedule.every((p) => installmentPaid(p));
-  const anyPaid = schedule.some((p) => installmentPaid(p));
+  const anyPaid = schedule.some((p) => (p.paidAmount ?? 0) > 0);
 
   return {
     ...source,

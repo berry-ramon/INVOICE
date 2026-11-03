@@ -1,7 +1,7 @@
 {
   "name": "Hatiri",
   "short_name": "Hatiri",
-  "description": "Offline invoicing, receipts, quotations and vouchers — on your device.",
+  "description": "Offline invoicing, receipts, quotations and vouchers - on your device.",
   "id": "/",
   "start_url": "/",
   "scope": "/",

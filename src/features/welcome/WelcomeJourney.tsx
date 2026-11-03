@@ -10,7 +10,7 @@ const steps = [
   {
     icon: FilePlus2,
     title: "Create any document",
-    body: "Invoices, receipts, quotations and vouchers — all from one place. Start empty and build it your way.",
+    body: "Invoices, receipts, quotations and vouchers - all from one place. Start empty and build it your way.",
   },
   {
     icon: Palette,
@@ -20,7 +20,7 @@ const steps = [
   {
     icon: Download,
     title: "Export a perfect PDF",
-    body: "Portrait or landscape, A4 or letter — with your branding, no watermarks, no accounts.",
+    body: "Portrait or landscape, A4 or letter - with your branding, no watermarks, no accounts.",
   },
   {
     icon: WifiOff,

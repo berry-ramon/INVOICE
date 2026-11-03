@@ -106,7 +106,7 @@ export async function downloadDocumentPdf(
   } catch (error) {
     console.error("PDF export failed:", error);
     throw new PdfExportError(
-      "Could not generate the PDF. Try again — if it keeps failing, use a smaller logo.",
+      "Could not generate the PDF. Try again - if it keeps failing, use a smaller logo.",
     );
   }
 }

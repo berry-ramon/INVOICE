@@ -18,7 +18,7 @@ interface EditableTextProps {
 export function EditableText({
   value,
   onChange,
-  placeholder = "—",
+  placeholder = "-",
   className = "",
   style,
   onPointerDown,
@@ -161,9 +161,9 @@ export function EditableDate({
     );
   }
 
-  /* Same rule: no "—" placeholder in preview/PDF. */
+  /* Same rule: no "-" placeholder in preview/PDF. */
   const formatted = formatDate(value);
-  const content = formatted || (editable ? "—" : "");
+  const content = formatted || (editable ? "-" : "");
 
   return (
     <span

@@ -13,6 +13,7 @@ export type ScheduleMode =
   | "deposit-only"
   | "custom";
 export type InstallmentInterval = "weekly" | "biweekly" | "monthly";
+export type DepositMode = "percent" | "fixed";
 
 export interface LineItem {
   id: string;
@@ -31,6 +32,7 @@ export interface ScheduledPayment {
   paidAmount?: number;
   note?: string;
   receiptId?: string;
+  receiptIds?: string[];
   paymentRequestId?: string;
 }
 
@@ -62,14 +64,14 @@ export interface MoneyDocument {
   paidWatermark?: boolean;
   amountPaid?: number;
 
-  /** Payment plan (deposit + installments or deposit only). */
   paymentSchedule?: ScheduledPayment[];
   scheduleMode?: ScheduleMode;
+  depositMode?: DepositMode;
   depositPercent?: number;
+  depositAmount?: number;
   installmentCount?: number;
   installmentInterval?: InstallmentInterval;
 
-  /** For Payment Requests and auto-generated Receipts. */
   linkedInvoiceId?: string;
   targetInstallmentId?: string;
 
